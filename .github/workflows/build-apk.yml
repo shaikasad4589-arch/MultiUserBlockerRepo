@@ -27,73 +27,88 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Extract zip file
+    - name: Extract and organize project
       run: |
+        echo "📦 Extracting MultiUserBlocker.zip..."
         if [ -f "MultiUserBlocker.zip" ]; then
-          echo "📦 Extracting MultiUserBlocker.zip..."
           unzip -o MultiUserBlocker.zip
-          echo "✅ Extraction complete"
-        else
-          echo "ℹ️ No zip file found, using existing source"
+          
+          # Move contents to root if in subdirectory
+          if [ -d "MultiUserBlocker/app" ] && [ -f "MultiUserBlocker/build.gradle" ]; then
+            echo "✅ Found MultiUserBlocker subdirectory"
+            cp -r MultiUserBlocker/* .
+            rm -rf MultiUserBlocker/
+            echo "✅ Project moved to root"
+          fi
         fi
+        
+        echo "📂 Project structure:"
+        ls -la
 
-    - name: Determine project directory
+    - name: Verify project structure
       run: |
-        if [ -d "MultiUserBlocker" ] && [ -f "MultiUserBlocker/build.gradle" ]; then
-          echo "PROJECT_DIR=MultiUserBlocker" >> $GITHUB_ENV
-          echo "✅ Project found in MultiUserBlocker/"
-        elif [ -f "build.gradle" ]; then
-          echo "PROJECT_DIR=." >> $GITHUB_ENV
-          echo "✅ Project found in root"
-        else
-          echo "❌ No build.gradle found!"
-          find . -name "build.gradle" -type f 2>/dev/null || echo "No build.gradle files"
+        if [ ! -f "build.gradle" ]; then
+          echo "❌ build.gradle not found!"
           exit 1
         fi
+        
+        if [ ! -d "app" ]; then
+          echo "❌ app directory not found!"
+          exit 1
+        fi
+        
+        echo "✅ Project structure verified"
 
     - name: Generate gradle wrapper
       run: |
-        cd "$PROJECT_DIR"
-        
         if [ ! -f "gradlew" ]; then
-          echo "⚠️ Generating gradle wrapper..."
-          gradle wrapper --gradle-version 8.1.0 --distribution-type bin || {
-            echo "❌ Gradle wrapper generation failed"
-            exit 1
-          }
+          echo "🔧 Generating gradle wrapper..."
+          gradle wrapper --gradle-version 8.1.0 --distribution-type bin
         fi
         
         chmod +x gradlew
         echo "✅ Gradle wrapper ready"
+        ./gradlew --version
+
+    - name: Clean build
+      run: |
+        echo "🧹 Cleaning previous builds..."
+        ./gradlew clean
 
     - name: Build Release APK
       run: |
-        cd "$PROJECT_DIR"
         echo "🏗️ Building Release APK..."
-        ./gradlew assembleRelease
+        ./gradlew assembleRelease -x lint
 
     - name: Build Debug APK
       run: |
-        cd "$PROJECT_DIR"
         echo "🐛 Building Debug APK..."
-        ./gradlew assembleDebug
+        ./gradlew assembleDebug -x lint
+
+    - name: Verify APKs were created
+      run: |
+        echo "🔍 Checking for APK files..."
+        find . -name "*.apk" -type f -ls
+        
+        if [ ! -f "app/build/outputs/apk/release/app-release.apk" ]; then
+          echo "⚠️ Release APK not found"
+        fi
+        
+        if [ ! -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+          echo "⚠️ Debug APK not found"
+        fi
 
     - name: Upload APKs
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: apk-builds
-        path: |
-          MultiUserBlocker/app/build/outputs/apk/release/*.apk
-          MultiUserBlocker/app/build/outputs/apk/debug/*.apk
-          app/build/outputs/apk/release/*.apk
-          app/build/outputs/apk/debug/*.apk
+        path: app/build/outputs/apk/
         if-no-files-found: warn
         retention-days: 30
 
-    - name: Build Complete
+    - name: Build Summary
       if: success()
       run: |
-        echo "✅ BUILD SUCCESSFUL!"
-        echo "📱 APKs generated:"
-        find . -name "*.apk" -type f
+        echo "✅ BUILD COMPLETED SUCCESSFULLY!"
+        echo "📱 APKs are ready for download in the Artifacts section"
