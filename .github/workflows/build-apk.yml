@@ -1,0 +1,62 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v2
+
+    - name: Extract zip file if it exists
+      run: |
+        if [ -f "MultiUserBlocker.zip" ]; then
+          unzip -o MultiUserBlocker.zip
+          echo "✓ Zip file extracted successfully"
+        else
+          echo "ℹ No zip file found, using existing source"
+        fi
+
+    - name: Make gradlew executable
+      run: chmod +x gradlew
+
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: app-release
+        path: app/build/outputs/apk/release/app-release.apk
+
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: app-debug
+        path: app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Build Summary
+      run: |
+        echo "✅ Build completed successfully!"
+        echo "Release APK: app/build/outputs/apk/release/app-release.apk"
+        echo "Debug APK: app/build/outputs/apk/debug/app-debug.apk"
+        ls -lh app/build/outputs/apk/*/
