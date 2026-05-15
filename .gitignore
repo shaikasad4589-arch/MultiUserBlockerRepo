@@ -1,0 +1,50 @@
+# Gradle files
+.gradle/
+build/
+*.apk
+*.ap_
+*.aab
+
+# Local configuration file
+local.properties
+
+# IDE
+.idea/
+.DS_Store
+*.iml
+*.swp
+*.swo
+*~
+.classpath
+.project
+.settings/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Android Studio
+.gradle/
+local.properties
+
+# CMake
+cmake-build-*/
+
+# Kotlin
+.kotlin/
+
+# Output files
+bin/
+out/
+gen/
+app/release/
+
+# Certificates
+*.jks
+*.keystore
+
+# IntelliJ
+*.iws
+
+# Misc
+*.log
+.DS_Store
