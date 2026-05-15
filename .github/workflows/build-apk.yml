@@ -26,40 +26,31 @@ jobs:
 
     - name: Extract zip file
       run: |
-        echo "=== Checking for zip file ==="
-        ls -la *.zip 2>/dev/null || echo "No zip file in root"
-        
         if [ -f "MultiUserBlocker.zip" ]; then
-          echo "=== Extracting MultiUserBlocker.zip ==="
+          echo "Extracting MultiUserBlocker.zip"
           unzip -o MultiUserBlocker.zip
-          echo "=== Contents after extraction ==="
-          find . -maxdepth 3 -type f -name "gradlew" | head -20
-          find . -maxdepth 3 -type d | head -30
         fi
 
-    - name: Locate and prepare build
+    - name: Determine project directory
       run: |
-        echo "=== Looking for gradlew ==="
-        GRADLEW_PATH=$(find . -name "gradlew" -type f | head -1)
-        
-        if [ -z "$GRADLEW_PATH" ]; then
-          echo "ERROR: gradlew not found!"
-          find . -type f -name "build.gradle*" | head -10
+        if [ -d "MultiUserBlocker" ] && [ -f "MultiUserBlocker/build.gradle" ]; then
+          echo "PROJECT_DIR=MultiUserBlocker" >> $GITHUB_ENV
+        elif [ -f "build.gradle" ]; then
+          echo "PROJECT_DIR=." >> $GITHUB_ENV
+        else
+          echo "ERROR: No build.gradle found!"
           exit 1
         fi
-        
-        echo "Found gradlew at: $GRADLEW_PATH"
-        
-        # Get the directory containing gradlew
-        PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-        echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-        
-        # Make it executable
-        chmod +x "$GRADLEW_PATH"
-        chmod +x "$PROJECT_DIR/gradlew"
-        
-        echo "=== Project directory contents ==="
-        ls -la "$PROJECT_DIR"
+
+    - name: Generate gradlew if missing
+      run: |
+        cd "$PROJECT_DIR"
+        if [ ! -f "gradlew" ]; then
+          echo "gradlew not found, generating with gradle wrapper"
+          gradle wrapper --gradle-version 8.1
+        fi
+        chmod +x gradlew
+        ls -la gradlew
 
     - name: Build Release APK
       run: |
@@ -71,16 +62,17 @@ jobs:
         cd "$PROJECT_DIR"
         ./gradlew assembleDebug
 
-    - name: Find and upload APKs
+    - name: Upload APKs
       uses: actions/upload-artifact@v4
       with:
         name: apk-builds
         path: |
-          **/app/build/outputs/apk/release/*.apk
-          **/app/build/outputs/apk/debug/*.apk
+          MultiUserBlocker/app/build/outputs/apk/release/*.apk
+          MultiUserBlocker/app/build/outputs/apk/debug/*.apk
+          app/build/outputs/apk/release/*.apk
+          app/build/outputs/apk/debug/*.apk
 
     - name: Build Summary
       run: |
         echo "✅ Build completed successfully!"
-        echo "=== Generated APKs ==="
         find . -name "*.apk" -type f
