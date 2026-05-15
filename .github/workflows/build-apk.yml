@@ -1,5 +1,8 @@
 name: Build APK
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [ main ]
@@ -20,59 +23,93 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
+        cache: 'gradle'
 
     - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
 
     - name: Extract zip file
       run: |
         if [ -f "MultiUserBlocker.zip" ]; then
-          echo "Extracting MultiUserBlocker.zip"
+          echo "📦 Extracting MultiUserBlocker.zip..."
           unzip -o MultiUserBlocker.zip
+          ls -la
         fi
 
     - name: Determine project directory
       run: |
         if [ -d "MultiUserBlocker" ] && [ -f "MultiUserBlocker/build.gradle" ]; then
           echo "PROJECT_DIR=MultiUserBlocker" >> $GITHUB_ENV
+          echo "✅ Project found in MultiUserBlocker/"
         elif [ -f "build.gradle" ]; then
           echo "PROJECT_DIR=." >> $GITHUB_ENV
+          echo "✅ Project found in root"
         else
-          echo "ERROR: No build.gradle found!"
+          echo "❌ ERROR: No build.gradle found!"
+          find . -name "build.gradle" -type f
           exit 1
         fi
 
-    - name: Generate gradlew if missing
+    - name: Generate gradle wrapper
       run: |
         cd "$PROJECT_DIR"
+        echo "🔧 Checking for gradlew..."
+        
         if [ ! -f "gradlew" ]; then
-          echo "gradlew not found, generating with gradle wrapper"
-          gradle wrapper --gradle-version 8.1
+          echo "⚠️ gradlew not found, generating wrapper..."
+          gradle wrapper --gradle-version 8.1.0 --distribution-type bin
+          if [ ! -f "gradlew" ]; then
+            echo "❌ Failed to generate gradlew"
+            exit 1
+          fi
         fi
+        
         chmod +x gradlew
-        ls -la gradlew
+        echo "✅ gradlew is ready"
+        ./gradlew --version
 
     - name: Build Release APK
       run: |
         cd "$PROJECT_DIR"
-        ./gradlew assembleRelease
+        echo "🏗️ Building Release APK..."
+        ./gradlew assembleRelease --stacktrace
+        if [ $? -ne 0 ]; then
+          echo "❌ Release build failed"
+          exit 1
+        fi
+        echo "✅ Release APK built successfully"
 
     - name: Build Debug APK
       run: |
         cd "$PROJECT_DIR"
-        ./gradlew assembleDebug
+        echo "🐛 Building Debug APK..."
+        ./gradlew assembleDebug --stacktrace
+        if [ $? -ne 0 ]; then
+          echo "❌ Debug build failed"
+          exit 1
+        fi
+        echo "✅ Debug APK built successfully"
+
+    - name: Locate APK files
+      run: |
+        echo "🔍 Searching for APK files..."
+        find . -name "*.apk" -type f -exec ls -lh {} \;
 
     - name: Upload APKs
       uses: actions/upload-artifact@v4
       with:
         name: apk-builds
         path: |
-          MultiUserBlocker/app/build/outputs/apk/release/*.apk
-          MultiUserBlocker/app/build/outputs/apk/debug/*.apk
-          app/build/outputs/apk/release/*.apk
-          app/build/outputs/apk/debug/*.apk
+          MultiUserBlocker/app/build/outputs/apk/release/app-release.apk
+          MultiUserBlocker/app/build/outputs/apk/debug/app-debug.apk
+          app/build/outputs/apk/release/app-release.apk
+          app/build/outputs/apk/debug/app-debug.apk
+        if-no-files-found: warn
+        retention-days: 30
 
     - name: Build Summary
+      if: success()
       run: |
-        echo "✅ Build completed successfully!"
-        find . -name "*.apk" -type f
+        echo "✅ BUILD COMPLETED SUCCESSFULLY!"
+        echo "📱 APK files are ready for download:"
+        find . -name "*.apk" -type f -exec echo "   - {}" \;
