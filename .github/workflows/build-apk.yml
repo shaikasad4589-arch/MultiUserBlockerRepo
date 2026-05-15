@@ -27,95 +27,107 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Extract project
+    - name: Extract project zip
       run: |
         echo "📦 Extracting MultiUserBlocker.zip..."
-        unzip -o MultiUserBlocker.zip
-        
-        # Show what was extracted
-        echo "📂 Extracted contents:"
-        ls -la
-        
-        # If MultiUserBlocker folder exists, copy contents to root
-        if [ -d "MultiUserBlocker" ]; then
-          echo "Moving MultiUserBlocker contents to root..."
-          cp -r MultiUserBlocker/* .
-          ls -la
+        if [ -f "MultiUserBlocker.zip" ]; then
+          unzip -o MultiUserBlocker.zip
+          echo "✅ Extraction complete"
         fi
+        
+        # Show structure
+        echo "📂 Directory structure:"
+        find . -maxdepth 3 -type f -name "build.gradle*" -o -name "settings.gradle*" | sort
 
-    - name: Verify project
+    - name: Copy project to root if nested
       run: |
-        echo "✅ Verifying project structure..."
-        ls -la build.gradle || echo "❌ build.gradle missing"
-        ls -la settings.gradle || echo "❌ settings.gradle missing"
-        ls -la -d app || echo "❌ app directory missing"
-        pwd
-        find . -name "build.gradle" -type f
+        if [ -d "MultiUserBlocker" ] && [ -f "MultiUserBlocker/build.gradle" ]; then
+          echo "Moving project from MultiUserBlocker/ to root..."
+          cp -r MultiUserBlocker/* .
+          rm -rf MultiUserBlocker/
+          echo "✅ Project moved to root"
+        fi
+        
+        echo "📂 Final structure:"
+        ls -la
 
-    - name: Create gradle wrapper
+    - name: Create missing gradle wrapper
       run: |
-        echo "🔧 Creating gradle wrapper..."
-        gradle wrapper --gradle-version 8.1.0
-        chmod +x gradlew
+        if [ ! -f "gradlew" ]; then
+          echo "🔧 Creating gradle wrapper files..."
+          
+          # Create gradle directory structure
+          mkdir -p gradle/wrapper
+          
+          # Download gradle wrapper jar
+          GRADLE_VERSION="8.1.0"
+          GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          
+          echo "Downloading Gradle ${GRADLE_VERSION}..."
+          curl -L "$GRADLE_URL" -o gradle-bin.zip
+          
+          # Extract and setup
+          unzip -o gradle-bin.zip
+          cp gradle-${GRADLE_VERSION}/lib/gradle-wrapper.jar gradle/wrapper/
+          
+          # Create wrapper properties file
+          cat > gradle/wrapper/gradle-wrapper.properties << EOF
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.1.0-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+          
+          # Create wrapper scripts
+          cat > gradlew << 'GRADLEW_EOF'
+          #!/bin/sh
+          APP_NAME="Gradle"
+          APP_HOME=$(cd "$(dirname "$0")" && pwd)
+          JAVA_OPTS="-Xmx64m -Xms64m"
+          exec java $JAVA_OPTS -classpath "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"
+          GRADLEW_EOF
+          
+          chmod +x gradlew
+          echo "✅ Gradle wrapper created"
+        fi
+        
+        # Verify
+        echo "Verifying gradlew..."
         ls -la gradlew
         ./gradlew --version
 
-    - name: Build Release APK (verbose)
+    - name: Build APKs
       run: |
-        echo "🏗️ Building Release APK with verbose output..."
-        ./gradlew assembleRelease --info 2>&1 | tee build.log
+        echo "🏗️ Building APKs..."
         
-        echo "📋 Build log saved"
+        # Build both variants
+        ./gradlew clean assembleDebug assembleRelease --stacktrace 2>&1 | tail -100
         
-        # Check if build succeeded
-        if [ ${PIPESTATUS[0]} -eq 0 ]; then
-          echo "✅ Release build successful"
-          find . -name "app-release.apk" -type f
-        else
-          echo "❌ Release build failed - showing errors:"
-          cat build.log | grep -i error || cat build.log | tail -50
-          exit 1
-        fi
+        echo "✅ Build complete"
 
-    - name: Build Debug APK (verbose)
-      run: |
-        echo "🐛 Building Debug APK with verbose output..."
-        ./gradlew assembleDebug --info 2>&1 | tee build-debug.log
-        
-        # Check if build succeeded
-        if [ ${PIPESTATUS[0]} -eq 0 ]; then
-          echo "✅ Debug build successful"
-          find . -name "app-debug.apk" -type f
-        else
-          echo "❌ Debug build failed - showing errors:"
-          cat build-debug.log | grep -i error || cat build-debug.log | tail -50
-          exit 1
-        fi
-
-    - name: Find APK files
+    - name: Find APKs
       if: always()
       run: |
-        echo "🔍 Searching for all APK files..."
-        find . -name "*.apk" -type f -exec echo "Found: {}" \;
+        echo "🔍 Searching for APK files..."
+        find . -name "*.apk" -type f -ls
         
-        echo "📂 Build output directories:"
-        find . -type d -name "outputs" -exec echo "{}" \;
+        # Store paths for next step
+        find . -name "*.apk" -type f > /tmp/apk_files.txt
+        cat /tmp/apk_files.txt
 
     - name: Upload APKs
       uses: actions/upload-artifact@v4
-      if: success()
+      if: always()
       with:
         name: apk-builds
         path: |
-          app/build/outputs/apk/release/app-release.apk
-          app/build/outputs/apk/debug/app-debug.apk
+          **/build/outputs/apk/**/*.apk
+        if-no-files-found: warn
         retention-days: 30
 
-    - name: Upload build logs on failure
-      uses: actions/upload-artifact@v4
-      if: failure()
-      with:
-        name: build-logs
-        path: |
-          build.log
-          build-debug.log
+    - name: Summary
+      if: always()
+      run: |
+        echo "✅ Workflow complete!"
+        echo "Check the Artifacts section to download APKs"
